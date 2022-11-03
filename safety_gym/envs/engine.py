@@ -10,6 +10,7 @@ import mujoco_py
 from mujoco_py import MjViewer, MujocoException, const, MjRenderContextOffscreen
 
 from safety_gym.envs.world import World, Robot
+from typing import Dict, List, Tuple, Union
 
 import sys
 
@@ -95,6 +96,9 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
     # Default configuration (this should not be nested since it gets copied)
     DEFAULT = {
+        'goal_env': False,  # Whether this is a goal-based environment
+        'goal_reward': 1.0,  # Reward for reaching a goal
+        'step_reward': -1.0,  # Reward per step
         'num_steps': 1000,  # Maximum number of environment steps in an episode
 
         'action_noise': 0.0,  # Magnitude of independent per-component gaussian action noise
@@ -445,12 +449,17 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 obs_space_dict['box_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
             if self.observe_box_lidar:
                 obs_space_dict['box_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
-        if self.observe_goal_dist:
-            obs_space_dict['goal_dist'] = gym.spaces.Box(0.0, 1.0, (1,), dtype=np.float32)
-        if self.observe_goal_comp:
-            obs_space_dict['goal_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
-        if self.observe_goal_lidar:
-            obs_space_dict['goal_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+        if self.goal_env:
+            obs_space_goal = gym.spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
+            obs_space_dict['achieved_goal'] = obs_space_goal
+        else:
+            if self.observe_goal_dist:
+                obs_space_dict['goal_dist'] = gym.spaces.Box(0.0, 1.0, (1,), dtype=np.float32)
+            if self.observe_goal_comp:
+                obs_space_dict['goal_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
+            if self.observe_goal_lidar:
+                obs_space_dict['goal_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
+
         if self.task == 'circle' and self.observe_circle:
             obs_space_dict['circle_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_remaining:
@@ -480,11 +489,16 @@ class Engine(gym.Env, gym.utils.EzPickle):
             obs_space_dict['vision'] = gym.spaces.Box(0, 1.0, self.vision_size + (3,), dtype=np.float32)
         # Flatten it ourselves
         self.obs_space_dict = obs_space_dict
-        if self.observation_flatten:
+        if self.observation_flatten or self.goal_env:
             self.obs_flat_size = sum([np.prod(i.shape) for i in self.obs_space_dict.values()])
             self.observation_space = gym.spaces.Box(-np.inf, np.inf, (self.obs_flat_size,), dtype=np.float32)
         else:
             self.observation_space = gym.spaces.Dict(obs_space_dict)
+        if self.goal_env:
+            self.observation_space = gym.spaces.Dict(
+                {'observation': self.observation_space,
+                 'achieved_goal': obs_space_goal,
+                 'desired_goal': obs_space_goal})
 
     def toggle_observation_space(self):
         self.observation_flatten = not(self.observation_flatten)
@@ -886,7 +900,6 @@ class Engine(gym.Env, gym.utils.EzPickle):
 
         # Reset stateful parts of the environment
         self.first_reset = False  # Built our first world successfully
-
         # Return an observation
         return self.obs()
 
@@ -1041,13 +1054,15 @@ class Engine(gym.Env, gym.utils.EzPickle):
         ''' Return the observation of our agent '''
         self.sim.forward()  # Needed to get sensordata correct
         obs = {}
-
-        if self.observe_goal_dist:
-            obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
-        if self.observe_goal_comp:
-            obs['goal_compass'] = self.obs_compass(self.goal_pos)
-        if self.observe_goal_lidar:
-            obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
+        if self.goal_env:
+            obs['achieved_goal'] = self.world.robot_pos()[0:2]
+        else:
+            if self.observe_goal_dist:
+                obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
+            if self.observe_goal_comp:
+                obs['goal_compass'] = self.obs_compass(self.goal_pos)
+            if self.observe_goal_lidar:
+                obs['goal_lidar'] = self.obs_lidar([self.goal_pos], GROUP_GOAL)
         if self.task == 'push':
             box_pos = self.box_pos
             if self.observe_box_comp:
@@ -1120,8 +1135,19 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 offset += k_size
             obs = flat_obs
         # assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
+        if self.goal_env:
+            obs = {
+                "observation": obs,
+                "achieved_goal": self.get_achieved_goal(),
+                "desired_goal": self.get_desired_goal()
+            }
         return obs
 
+    def get_achieved_goal(self):
+        return self.world.robot_pos()[0:2]
+
+    def get_desired_goal(self):
+        return self.goal_pos[0:2]
 
     def cost(self):
         ''' Calculate the current costs and return a dict '''
@@ -1264,9 +1290,12 @@ class Engine(gym.Env, gym.utils.EzPickle):
             info['cost_exception'] = 1.0
         else:
             self.sim.forward()  # Needed to get sensor readings correct!
-
+            observation = self.obs()
             # Reward processing
-            reward = self.reward()
+            if self.goal_env:
+                reward = self.compute_reward(observation["achieved_goal"], observation["desired_goal"], info)
+            else:
+                reward = self.reward()
 
             # Constraint violations
             info.update(self.cost())
@@ -1275,9 +1304,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
             self.buttons_timer_tick()
 
             # Goal processing
-            if self.goal_met():
+            if self.goal_env:
+                goal_met = self.compute_done(observation["achieved_goal"], observation["desired_goal"], info)
+            else:
+                goal_met = self.goal_met()
+            if goal_met:
                 info['goal_met'] = True
-                reward += self.reward_goal
+                if not self.goal_env:
+                    reward += self.reward_goal
                 if self.continue_goal:
                     # Update the internal layout so we can correctly resample (given objects have moved)
                     self.update_layout()
@@ -1302,6 +1336,70 @@ class Engine(gym.Env, gym.utils.EzPickle):
             self.done = True  # Maximum number of steps in an episode reached
 
         return self.obs(), reward, self.done, info
+
+    def compute_reward(
+        self,
+        achieved_goal: Union[List[np.ndarray], np.ndarray],
+        desired_goal: Union[List[np.ndarray], np.ndarray],
+        info: Union[np.ndarray, List[Dict], Dict]
+    ) -> Union[np.ndarray, List[float], float]:
+        """Compute the step reward.
+
+        This externalizes the reward function and makes it dependent
+        on an a desired goal and the one that was achieved.
+        If you wish to include additional rewards that are independent
+        of the goal, you can include the necessary values to derive
+        it in info and compute it accordingly.
+        Args:
+            achieved_goal (object): the goal that was achieved during execution
+            desired_goal (object): the desired goal that we asked the agent to
+                attempt to achieve.
+            info (dict): an info dictionary with additional information
+        Returns:
+            float: The reward that corresponds to the provided achieved goal
+                w.r.t. to the desired goal.
+                Note that the following should always hold true:
+                ob, reward, done, info = env.step()
+                assert reward == env.compute_reward(
+                    ob['achieved_goal'], ob['goal'], info)
+        """
+        reward = self.step_reward
+        distance = np.linalg.norm(
+            np.array(achieved_goal)-np.array(desired_goal), axis=-1)
+        goal_reached = distance < self.goal_size
+        reward += goal_reached * self.reward_goal
+        return reward
+
+    def compute_done(
+        self,
+        achieved_goal: Union[List[np.ndarray], np.ndarray],
+        desired_goal: Union[List[np.ndarray], np.ndarray],
+        info: Union[np.ndarray, List[Dict], Dict]
+    ) -> Union[np.ndarray, List[bool], bool]:
+        """Compute the step reward.
+
+        This externalizes the done function and makes it dependent
+        on an a desired goal and the one that was achieved.
+        If you wish to include additional rewards that are independent
+        of the goal, you can include the necessary values to derive
+        it in info and compute it accordingly.
+        Args:
+            achieved_goal (object): the goal that was achieved during execution
+            desired_goal (object): the desired goal that we asked the agent to
+                attempt to achieve.
+            info (dict): an info dictionary with additional information
+        Returns:
+            bool: The done flag that corresponds to the provided achieved goal
+                w.r.t. to the desired goal.
+                Note that the following should always hold true:
+                ob, reward, done, info = env.step()
+                assert done == env.compute_done(
+                    ob['achieved_goal'], ob['goal'], info)
+        """
+        distance = np.linalg.norm(
+            np.array(achieved_goal)-np.array(desired_goal), axis=-1)
+        goal_reached = distance < self.goal_size
+        return goal_reached
 
     def reward(self):
         ''' Calculate the dense component of reward.  Call exactly once per step '''

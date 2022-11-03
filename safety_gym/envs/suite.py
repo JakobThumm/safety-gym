@@ -108,6 +108,8 @@ zero_base_dict = {'placements_extents': [-1,-1,1,1]}
 # Shared among all (levels 0, 1, 2)
 goal_all = {
     'task': 'goal',
+    'goal_env': True,
+    'step_reward': -1,
     'goal_size': 0.3,
     'goal_keepout': 0.305,
     'hazards_size': 0.2,
