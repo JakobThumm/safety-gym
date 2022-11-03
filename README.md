@@ -9,7 +9,7 @@ Tools for accelerating safe exploration research.
 
 ## Supported Platforms
 
-This package has been tested on Mac OS Mojave and Ubuntu 16.04 LTS, and is probably fine for most recent Mac and Linux operating systems. 
+This package has been tested on Ubuntu 20.04 LTS, and is probably fine for most recent Mac and Linux operating systems. 
 
 Requires **Python 3.6 or greater.**  
 
