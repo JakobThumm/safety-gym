@@ -450,7 +450,8 @@ class Engine(gym.Env, gym.utils.EzPickle):
             if self.observe_box_lidar:
                 obs_space_dict['box_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.goal_env:
-            obs_space_goal = gym.spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
+            # 2 dim for pos and 2 for orientation
+            obs_space_goal = gym.spaces.Box(-np.inf, np.inf, (4,), dtype=np.float32)
             obs_space_dict['achieved_goal'] = obs_space_goal
         else:
             if self.observe_goal_dist:
@@ -1055,7 +1056,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         self.sim.forward()  # Needed to get sensordata correct
         obs = {}
         if self.goal_env:
-            obs['achieved_goal'] = self.world.robot_pos()[0:2]
+            obs['achieved_goal'] = np.concatenate((self.world.robot_pos()[0:2], self.world.robot_mat()[0, 0:2]))
         else:
             if self.observe_goal_dist:
                 obs['goal_dist'] = np.array([np.exp(-self.dist_goal())])
@@ -1144,10 +1145,10 @@ class Engine(gym.Env, gym.utils.EzPickle):
         return obs
 
     def get_achieved_goal(self):
-        return self.world.robot_pos()[0:2]
+        return np.concatenate((self.world.robot_pos()[0:2], self.world.robot_mat()[0,0:2]))
 
     def get_desired_goal(self):
-        return self.goal_pos[0:2]
+        return np.concatenate((self.goal_pos[0:2], [0, 0]))
 
     def cost(self):
         ''' Calculate the current costs and return a dict '''
@@ -1369,7 +1370,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         """
         reward = self.step_reward
         distance = np.linalg.norm(
-            np.array(achieved_goal)-np.array(desired_goal), axis=-1)
+            np.array(achieved_goal[..., 0:2])-np.array(desired_goal[..., 0:2]), axis=-1)
         goal_reached = distance < self.goal_size
         reward += goal_reached * self.reward_goal
         return reward
@@ -1401,7 +1402,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
                     ob['achieved_goal'], ob['goal'], info)
         """
         distance = np.linalg.norm(
-            np.array(achieved_goal)-np.array(desired_goal), axis=-1)
+            np.array(achieved_goal[..., 0:2])-np.array(desired_goal[..., 0:2]), axis=-1)
         goal_reached = distance < self.goal_size
         return goal_reached
 
