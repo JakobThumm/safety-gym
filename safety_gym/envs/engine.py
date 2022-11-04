@@ -1292,10 +1292,12 @@ class Engine(gym.Env, gym.utils.EzPickle):
             self.sim.forward()  # Needed to get sensor readings correct!
             observation = self.obs()
             # Reward processing
+            dense_reward = self.reward()
             if self.goal_env:
                 reward = self.compute_reward(observation["achieved_goal"], observation["desired_goal"], info)
+                info["dense_reward"] = dense_reward
             else:
-                reward = self.reward()
+                reward = dense_reward
 
             # Constraint violations
             info.update(self.cost())
@@ -1312,6 +1314,8 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 info['goal_met'] = True
                 if not self.goal_env:
                     reward += self.reward_goal
+                else:
+                    info["dense_reward"] += self.reward_goal
                 if self.continue_goal:
                     # Update the internal layout so we can correctly resample (given objects have moved)
                     self.update_layout()
