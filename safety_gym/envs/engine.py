@@ -402,29 +402,29 @@ class Engine(gym.Env, gym.utils.EzPickle):
         obs_space_dict = OrderedDict()  # See self.obs()
 
         if self.observe_freejoint:
-            obs_space_dict['freejoint'] = gym.spaces.Box(-np.inf, np.inf, (7,), dtype=np.float32)
+            obs_space_dict['freejoint'] = gym.spaces.Box(-10, 10, (7,), dtype=np.float32)
         if self.observe_com:
-            obs_space_dict['com'] = gym.spaces.Box(-np.inf, np.inf, (3,), dtype=np.float32)
+            obs_space_dict['com'] = gym.spaces.Box(-10, 10, (3,), dtype=np.float32)
         if self.observe_sensors:
             for sensor in self.sensors_obs:  # Explicitly listed sensors
                 dim = self.robot.sensor_dim[sensor]
-                obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (dim,), dtype=np.float32)
+                obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (dim,), dtype=np.float32)
             # Velocities don't have wraparound effects that rotational positions do
             # Wraparounds are not kind to neural networks
             # Whereas the angle 2*pi is very close to 0, this isn't true in the network
             # In theory the network could learn this, but in practice we simplify it
             # when the sensors_angle_components switch is enabled.
             for sensor in self.robot.hinge_vel_names:
-                obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (1,), dtype=np.float32)
+                obs_space_dict[sensor] = gym.spaces.Box(-10, 10 (1,), dtype=np.float32)
             for sensor in self.robot.ballangvel_names:
-                obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (3,), dtype=np.float32)
+                obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (3,), dtype=np.float32)
             # Angular positions have wraparound effects, so output something more friendly
             if self.sensors_angle_components:
                 # Single joints are turned into sin(x), cos(x) pairs
                 # These should be easier to learn for neural networks,
                 # Since for angles, small perturbations in angle give small differences in sin/cos
                 for sensor in self.robot.hinge_pos_names:
-                    obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (2,), dtype=np.float32)
+                    obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (2,), dtype=np.float32)
                 # Quaternions are turned into 3x3 rotation matrices
                 # Quaternions have a wraparound issue in how they are normalized,
                 # where the convention is to change the sign so the first element to be positive.
@@ -436,14 +436,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 # but right now we have very little code to support SO(3) roatations.
                 # Instead we use a 3x3 rotation matrix, which if normalized, smoothly varies as well.
                 for sensor in self.robot.ballquat_names:
-                    obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (3, 3), dtype=np.float32)
+                    obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (3, 3), dtype=np.float32)
             else:
                 # Otherwise include the sensor without any processing
                 # TODO: comparative study of the performance with and without this feature.
                 for sensor in self.robot.hinge_pos_names:
-                    obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (1,), dtype=np.float32)
+                    obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (1,), dtype=np.float32)
                 for sensor in self.robot.ballquat_names:
-                    obs_space_dict[sensor] = gym.spaces.Box(-np.inf, np.inf, (4,), dtype=np.float32)
+                    obs_space_dict[sensor] = gym.spaces.Box(-10, 10, (4,), dtype=np.float32)
         if self.task == 'push':
             if self.observe_box_comp:
                 obs_space_dict['box_compass'] = gym.spaces.Box(-1.0, 1.0, (self.compass_shape,), dtype=np.float32)
@@ -451,7 +451,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 obs_space_dict['box_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.goal_env:
             # 2 dim for pos and 2 for orientation
-            obs_space_goal = gym.spaces.Box(-np.inf, np.inf, (4,), dtype=np.float32)
+            obs_space_goal = gym.spaces.Box(-10, 10, (4,), dtype=np.float32)
             obs_space_dict['achieved_goal'] = obs_space_goal
         else:
             if self.observe_goal_dist:
@@ -478,11 +478,11 @@ class Engine(gym.Env, gym.utils.EzPickle):
         if self.buttons_num and self.observe_buttons:
             obs_space_dict['buttons_lidar'] = gym.spaces.Box(0.0, 1.0, (self.lidar_num_bins,), dtype=np.float32)
         if self.observe_qpos:
-            obs_space_dict['qpos'] = gym.spaces.Box(-np.inf, np.inf, (self.robot.nq,), dtype=np.float32)
+            obs_space_dict['qpos'] = gym.spaces.Box(-10, 10, (self.robot.nq,), dtype=np.float32)
         if self.observe_qvel:
-            obs_space_dict['qvel'] = gym.spaces.Box(-np.inf, np.inf, (self.robot.nv,), dtype=np.float32)
+            obs_space_dict['qvel'] = gym.spaces.Box(-10, 10, (self.robot.nv,), dtype=np.float32)
         if self.observe_ctrl:
-            obs_space_dict['ctrl'] = gym.spaces.Box(-np.inf, np.inf, (self.robot.nu,), dtype=np.float32)
+            obs_space_dict['ctrl'] = gym.spaces.Box(-100, 100, (self.robot.nu,), dtype=np.float32)
         if self.observe_vision:
             width, height = self.vision_size
             rows, cols = height, width
@@ -491,8 +491,14 @@ class Engine(gym.Env, gym.utils.EzPickle):
         # Flatten it ourselves
         self.obs_space_dict = obs_space_dict
         if self.observation_flatten or self.goal_env:
-            self.obs_flat_size = sum([np.prod(i.shape) for i in self.obs_space_dict.values()])
-            self.observation_space = gym.spaces.Box(-np.inf, np.inf, (self.obs_flat_size,), dtype=np.float32)
+            lows = np.array([])
+            highs = np.array([])
+            self.obs_flat_size = 0
+            for key in self.obs_space_dict:
+                lows = np.concatenate((lows, self.obs_space_dict[key].low))
+                highs = np.concatenate((highs, self.obs_space_dict[key].high))
+                self.obs_flat_size += self.obs_space_dict[key].low.size
+            self.observation_space = gym.spaces.Box(lows, highs, dtype=np.float32)
         else:
             self.observation_space = gym.spaces.Dict(obs_space_dict)
         if self.goal_env:
@@ -1307,10 +1313,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
             self.buttons_timer_tick()
 
             # Goal processing
-            if self.goal_env:
-                goal_met = self.compute_done(observation["achieved_goal"], observation["desired_goal"], info)
-            else:
-                goal_met = self.goal_met()
+            goal_met = self.goal_met()
             if goal_met:
                 info['goal_met'] = True
                 if not self.goal_env:
@@ -1401,10 +1404,10 @@ class Engine(gym.Env, gym.utils.EzPickle):
                 assert done == env.compute_done(
                     ob['achieved_goal'], ob['goal'], info)
         """
-        distance = np.linalg.norm(
-            np.array(achieved_goal[..., 0:2])-np.array(desired_goal[..., 0:2]), axis=-1)
-        goal_reached = distance < self.goal_size
-        return goal_reached
+        # distance = np.linalg.norm(
+        #     np.array(achieved_goal[..., 0:2])-np.array(desired_goal[..., 0:2]), axis=-1)
+        # goal_reached = distance < self.goal_size
+        return np.full(np.shape(achieved_goal)[0], False)
 
     def reward(self):
         ''' Calculate the dense component of reward.  Call exactly once per step '''
