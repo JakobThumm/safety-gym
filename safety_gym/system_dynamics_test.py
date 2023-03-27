@@ -55,7 +55,7 @@ def quat_2_euler(q):
 def run_dynamics_test(env_name):
     """Test the system dynamics."""
     env = gym.make(env_name)
-    env.seed(3)
+    env.seed(0)
     obs = env.reset()
     state_0 = deepcopy(env.sim.data.get_body_xpos('robot')[0:2])
     theta_0 = quat_2_euler(deepcopy(env.sim.data.get_body_xquat('robot')))[2]
@@ -98,8 +98,8 @@ def run_dynamics_test(env_name):
                 if np.abs(delta_theta) > np.pi:
                     delta_theta -= np.sign(delta_theta) * 2 * np.pi
 
-                if abs(delta_theta) > 0.02:
-                    u2 = np.sign(delta_theta)
+                if abs(delta_theta) > 0.01:
+                    u2 = np.clip(delta_theta / (GEAR_TURN * dt), -1, 1)
                 else:
                     u2 = 0
             else:
