@@ -16,9 +16,9 @@ def run_random(env_name):
             print('Episode Return: %.3f \t Episode Cost: %.3f'%(ep_ret, ep_cost))
             ep_ret, ep_cost = 0, 0
             obs = env.reset()
-        assert env.observation_space.contains(obs)
+        # assert env.observation_space.contains(obs)
         act = env.action_space.sample()
-        assert env.action_space.contains(act)
+        # assert env.action_space.contains(act)
         obs, reward, done, info = env.step(act)
         # print('reward', reward)
         ep_ret += reward

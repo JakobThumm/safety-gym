@@ -291,7 +291,7 @@ class Engine(gym.Env, gym.utils.EzPickle):
         # Frameskip is the number of physics simulation steps per environment step
         # Frameskip is sampled as a binomial distribution
         # For deterministic steps, set frameskip_binom_p = 1.0 (always take max frameskip)
-        'frameskip_binom_n': 10,  # Number of draws trials in binomial distribution (max frameskip)
+        'frameskip_binom_n': 1,  # Number of draws trials in binomial distribution (max frameskip)
         'frameskip_binom_p': 1.0,  # Probability of trial return (controls distribution)
 
         '_seed': None,  # Random state seed (avoid name conflict with self.seed)
