@@ -55,7 +55,7 @@ def quat_2_euler(q):
 def run_dynamics_test(env_name):
     """Test the system dynamics."""
     env = gym.make(env_name)
-    env.seed(0)
+    env.seed(1)
     obs = env.reset()
     state_0 = deepcopy(env.sim.data.get_body_xpos('robot')[0:2])
     theta_0 = quat_2_euler(deepcopy(env.sim.data.get_body_xquat('robot')))[2]
@@ -78,32 +78,27 @@ def run_dynamics_test(env_name):
     )
     s = np.array([0, 0, 0, 0, theta_0])
     model_states[0] = s
-    robot_stopped = False
     for i in range(1, length):
         if i < length/3:
-            agent_inputs = np.array([0.05, 1])
+            agent_inputs = np.array([0.05, 0.5])
         else:
             # new failsafe strategy
             acc_opt = -1/dt * (
                 v_true[0] * np.cos(theta_true) + v_true[1] * np.sin(theta_true)
             )
-            if not robot_stopped:
-                if np.linalg.norm(v_true) > 0.01:
-                    u1 = acc_opt * MASS / GEAR
-                    delta_theta = np.arctan2(v_true[1], v_true[0]) - theta_true
-                else:
-                    u1 = 0
-                    delta_theta = 0
-                    robot_stopped = True
-                if np.abs(delta_theta) > np.pi:
-                    delta_theta -= np.sign(delta_theta) * 2 * np.pi
-
-                if abs(delta_theta) > 0.01:
-                    u2 = np.clip(delta_theta / (GEAR_TURN * dt), -1, 1)
-                else:
-                    u2 = 0
+            if np.linalg.norm(v_true) > 0.01:
+                u1 = acc_opt * MASS / GEAR
+                delta_theta = np.arctan2(v_true[1], v_true[0]) - theta_true
             else:
                 u1 = 0
+                delta_theta = 0
+                # robot_stopped = True
+            if np.abs(delta_theta) > np.pi:
+                delta_theta -= np.sign(delta_theta) * 2 * np.pi
+
+            if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.1:
+                u2 = np.clip(delta_theta / (GEAR_TURN * dt), -1, 1)
+            else:
                 u2 = 0
             agent_inputs = np.array([u1, u2])
         # assert env.observation_space.contains(obs)
