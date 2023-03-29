@@ -86,9 +86,8 @@ def run_dynamics_test(env_name):
             agent_inputs = np.array([0.03, -0.6])
         else:
             # new failsafe strategy
-            acc_opt = -1/dt * (
-                v_true[0] * np.cos(theta_true) + v_true[1] * np.sin(theta_true)
-            )
+            v_theta = (v_true[0] * np.cos(theta_true) + v_true[1] * np.sin(theta_true))
+            acc_opt = v_theta * (DAMPING/MASS - 1/dt)
             if np.linalg.norm(v_true) > 0.01:
                 u1 = acc_opt * MASS / GEAR
                 delta_theta = np.arctan2(v_true[1], v_true[0]) - theta_true
@@ -99,18 +98,18 @@ def run_dynamics_test(env_name):
             if np.abs(delta_theta) > np.pi:
                 delta_theta -= np.sign(delta_theta) * 2 * np.pi
 
-            if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.1:
+            if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.05:
                 if abs(delta_theta) <= np.pi/2:
                     act_theta = delta_theta
                 else:
                     # Try to turn opposite to the direction of motion
                     act_theta = delta_theta - np.pi if delta_theta > 0 else\
                         delta_theta + np.pi
-                u2 = np.clip(act_theta / (GEAR_TURN * dt), -1, 1)
+                u2 = np.clip(act_theta * GEAR_TURN / dt, -1, 1)
             else:
                 u2 = 0
             agent_inputs = np.array([u1, u2])
-            agent_inputs = np.array([0, 0])
+            # agent_inputs = np.array([0, 0])
         # assert env.observation_space.contains(obs)
         act = agent_inputs
         # assert env.action_space.contains(act)
