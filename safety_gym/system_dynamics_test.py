@@ -10,8 +10,9 @@ MASS = 0.00518879
 GRAVITY = 9.81
 FRICTION = 0.01
 GEAR = 0.3
-GEAR_TURN = 3
-
+GEAR_TURN = 0.3
+DAMPING = 0.01
+ROT_DAMPING = 0.005
 
 def force_2_acc(force):
     """Calculate the acceleration."""
@@ -27,14 +28,16 @@ def dynamics(state, u, dt):
     limit = 0.05
     force = np.clip(force, -limit, limit)
     steering = np.clip(steering, -1, 1)
+    abs_steer = np.abs(steering)
+    abs_steer = np.max((0.0, abs_steer - 0.09))
     acc = force_2_acc(force)
     F_mu = FRICTION * MASS * GRAVITY
     sub_steps = 1
     for i in range(sub_steps):
-        theta += GEAR_TURN * steering * dt/sub_steps
-        v_x += (acc * np.cos(theta) - np.sign(v_x) * FRICTION * F_mu) *\
+        theta += 1/GEAR_TURN * (np.sign(steering) * abs_steer) * dt/sub_steps
+        v_x += (acc * np.cos(theta) - np.sign(v_x) * FRICTION * F_mu - v_x * DAMPING / MASS) *\
             dt/sub_steps
-        v_y += (acc * np.sin(theta) - np.sign(v_y) * FRICTION * F_mu) *\
+        v_y += (acc * np.sin(theta) - np.sign(v_y) * FRICTION * F_mu - v_y * DAMPING / MASS ) *\
             dt/sub_steps
         x += v_x * dt/sub_steps
         y += v_y * dt/sub_steps
@@ -79,8 +82,8 @@ def run_dynamics_test(env_name):
     s = np.array([0, 0, 0, 0, theta_0])
     model_states[0] = s
     for i in range(1, length):
-        if i < length/3:
-            agent_inputs = np.array([0.05, 0.5])
+        if i < length/2:
+            agent_inputs = np.array([0.03, -0.6])
         else:
             # new failsafe strategy
             acc_opt = -1/dt * (
@@ -97,10 +100,17 @@ def run_dynamics_test(env_name):
                 delta_theta -= np.sign(delta_theta) * 2 * np.pi
 
             if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.1:
-                u2 = np.clip(delta_theta / (GEAR_TURN * dt), -1, 1)
+                if abs(delta_theta) <= np.pi/2:
+                    act_theta = delta_theta
+                else:
+                    # Try to turn opposite to the direction of motion
+                    act_theta = delta_theta - np.pi if delta_theta > 0 else\
+                        delta_theta + np.pi
+                u2 = np.clip(act_theta / (GEAR_TURN * dt), -1, 1)
             else:
                 u2 = 0
             agent_inputs = np.array([u1, u2])
+            agent_inputs = np.array([0, 0])
         # assert env.observation_space.contains(obs)
         act = agent_inputs
         # assert env.action_space.contains(act)
@@ -154,8 +164,24 @@ def run_dynamics_test(env_name):
     plt.xlabel('time [s]')
     plt.ylabel('delta theta [rad]')
     plt.legend()
+    print(np.mean(true_states[1:int(np.floor(length/2)), 4] - true_states[0:int(np.floor(length/2)-1), 4]))
+    res = np.array(
+        [[-1,	-0.005958602],
+         [-0.7, -0.004128173068736348],
+         [-0.5,	-0.002675281],
+         [-0.3,	-0.001562048],
+         [-0.2,	-0.000979059],
+         [-0.1,	-7.00E-05]]
+    )
+    # plt.figure()
+    # plt.plot(res[:, 0], res[:, 1])
+    # plt.plot(np.arange(-1, 0, 0.01), np.arange(-1, 0, 0.01)*GEAR_TURN*0.002)
+    # plt.xlabel('input angle force')
+    # plt.ylabel('mean delta theta')
+    # plt.legend()
     plt.show()
-    # stop=0
+    
+    stop=0
 
 
 if __name__ == '__main__':
