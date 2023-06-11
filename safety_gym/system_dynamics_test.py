@@ -35,9 +35,9 @@ def dynamics(state, u, dt):
     sub_steps = 1
     for i in range(sub_steps):
         theta += 1/GEAR_TURN * (np.sign(steering) * abs_steer) * dt/sub_steps
-        v_x += (acc * np.cos(theta) - np.sign(v_x) * FRICTION * F_mu - v_x * DAMPING / MASS) *\
+        v_x += (acc * np.cos(theta) - np.sign(v_x) * F_mu - v_x * DAMPING / MASS) *\
             dt/sub_steps
-        v_y += (acc * np.sin(theta) - np.sign(v_y) * FRICTION * F_mu - v_y * DAMPING / MASS ) *\
+        v_y += (acc * np.sin(theta) - np.sign(v_y) * F_mu - v_y * DAMPING / MASS ) *\
             dt/sub_steps
         x += v_x * dt/sub_steps
         y += v_y * dt/sub_steps
@@ -53,6 +53,33 @@ def quat_2_euler(q):
     pitch = np.arcsin(2 * (w * y - z * x))
     yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2))
     return np.array([roll, pitch, yaw])
+
+
+def failsafe(v_true, theta_true, dt):
+    """Calculate a failafe action for the current velocity and angle."""
+    v_theta = (v_true[0] * np.cos(theta_true) + v_true[1] * np.sin(theta_true))
+    acc_opt = v_theta * (DAMPING/MASS - 1/dt)
+    if np.linalg.norm(v_true) > 0.01:
+        u1 = acc_opt * MASS / GEAR
+        delta_theta = np.arctan2(v_true[1], v_true[0]) - theta_true
+    else:
+        u1 = 0
+        delta_theta = 0
+        # robot_stopped = True
+    if np.abs(delta_theta) > np.pi:
+        delta_theta -= np.sign(delta_theta) * 2 * np.pi
+
+    if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.1:
+        if abs(delta_theta) <= np.pi/2:
+            act_theta = delta_theta
+        else:
+            # Try to turn opposite to the direction of motion
+            act_theta = delta_theta - np.pi if delta_theta > 0 else\
+                delta_theta + np.pi
+        u2 = np.clip(act_theta * GEAR_TURN / dt, -1, 1)
+    else:
+        u2 = 0
+    return np.array([u1, u2])
 
 
 def run_dynamics_test(env_name):
@@ -83,33 +110,10 @@ def run_dynamics_test(env_name):
     model_states[0] = s
     for i in range(1, length):
         if i < length/2:
-            agent_inputs = np.array([0.03, -0.6])
+            agent_inputs = np.array([-0.02, -1])
         else:
             # new failsafe strategy
-            v_theta = (v_true[0] * np.cos(theta_true) + v_true[1] * np.sin(theta_true))
-            acc_opt = v_theta * (DAMPING/MASS - 1/dt)
-            if np.linalg.norm(v_true) > 0.01:
-                u1 = acc_opt * MASS / GEAR
-                delta_theta = np.arctan2(v_true[1], v_true[0]) - theta_true
-            else:
-                u1 = 0
-                delta_theta = 0
-                # robot_stopped = True
-            if np.abs(delta_theta) > np.pi:
-                delta_theta -= np.sign(delta_theta) * 2 * np.pi
-
-            if abs(delta_theta) > 0.01 and np.linalg.norm(v_true) > 0.05:
-                if abs(delta_theta) <= np.pi/2:
-                    act_theta = delta_theta
-                else:
-                    # Try to turn opposite to the direction of motion
-                    act_theta = delta_theta - np.pi if delta_theta > 0 else\
-                        delta_theta + np.pi
-                u2 = np.clip(act_theta * GEAR_TURN / dt, -1, 1)
-            else:
-                u2 = 0
-            agent_inputs = np.array([u1, u2])
-            # agent_inputs = np.array([0, 0])
+            agent_inputs = failsafe(v_true, theta_true, dt)
         # assert env.observation_space.contains(obs)
         act = agent_inputs
         # assert env.action_space.contains(act)
